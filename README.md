@@ -20,10 +20,15 @@ ARMGC 38대 크레인(211~272호)에 장착되는 Spreader(Y01~Y44)의 교체 �
 - `ARMGC_Spreader_Count_Manager.exe`: 파이썬 설치 없이 실행 가능한 Windows 단독 실행 파일
 - `spreader_history.db`: 회차별 산정 이력 및 기간별 조회용 SQLite 데이터베이스
 - `ARMGC_Spreader_Count_20260831.xlsx`: 기준 관리 엑셀 파일 (2026-08-31)
-- `ARMGC_Spreader_Count_20261019.xlsx`: 산정 완료 관리 엑셀 파일 (2026-10-19, TLC 기준)
+- `ARMGC_Spreader_Count_20261019.xlsx`: 1차 산정 완료 관리 엑셀 파일 (2026-10-19, TLC 기준)
+- `ARMGC_Spreader_Count_20261030.xlsx`: 2차 산정 완료 관리 엑셀 파일 (2026-10-30, TLC 기준)
 - `run_spreader_app.bat`: Python 스크립트 간편 실행 배치 파일
 
 ## 버전 이력 (Changelog)
+- **v1.1.0 (2026-10-30)**
+  - 2026-10-30 대시보드 현황 사진 OCR 판독 결과 반영 (교체 호기 6대 자동 감지: 211호 `Y17→Y01`, 213호 `Y28→Y26`, 234호 `Y21→Y08`, 241호 `Y11→Y21`, 254호 `Y34→Y17`, 272호 `Y26→Y09`)
+  - 2차 산정 기간(`2026-10-20 ~ 2026-10-30`) 호기별 TLC(트위스트락횟수) 반영 및 DB(`spreader_history.db`) 누적 저장
+  - `ARMGC_Spreader_Count_20261030.xlsx` 및 배포용 `ARMGC_Spreader_Count_Manager.exe` 최신화
 - **v1.0.0 (2026-10-19)**
   - 초기 릴리즈: 2026-08-31 관리 엑셀 및 2026-09-14 ~ 2026-10-19 대시보드 OCR 판독 데이터 반영
   - TLC(트위스트락횟수) 기준 자동/수동 일할 배분 엔진 구현

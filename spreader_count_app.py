@@ -115,7 +115,19 @@ OCR_DASHBOARD_20261019 = {
     "271": "Y05", "272": "Y26"
 }
 
-# 사용자 확인 수동 교환 이력 기본 프리셋
+# 제미나이 OCR 판독 결과: 2026-10-30 대시보드 현황
+OCR_DASHBOARD_20261030 = {
+    "211": "Y01", "212": "Y18", "213": "Y26", "214": "Y27", "215": "Y13", "216": "Y25",
+    "221": "Y39", "222": "Y36", "223": "Y04", "224": "Y30", "225": "Y22", "226": "Y44",
+    "231": "Y32", "232": "Y20", "233": "Y03", "234": "Y08", "235": "Y24", "236": "Y35",
+    "241": "Y21", "242": "Y29", "243": "Y02", "244": "Y43", "245": "Y37", "246": "Y07",
+    "251": "Y14", "252": "Y33", "253": "Y16", "254": "Y17", "255": "Y23", "256": "Y42",
+    "261": "Y12", "262": "Y10", "263": "Y38", "264": "Y15", "265": "Y40", "266": "Y06",
+    "271": "Y05", "272": "Y09"
+}
+# 2026-10-30 예비/정비 현황: Y19(정비완료), Y11(910), Y34(910), Y41(793), Y28(793), Y31(SPARE)
+
+# 사용자 확인 수동 교환 이력 기본 프리셋 (1차: 9/14~10/19)
 DEFAULT_MANUAL_OVERRIDES = [
     {
         "crane": "226",
@@ -133,7 +145,7 @@ DEFAULT_MANUAL_OVERRIDES = [
     }
 ]
 
-# 2026/09/14 ~ 2026/10/19 ARMGC (TC4211 ~ TC4272) 호기별 TLC (트위스트락횟수) 기본값
+# 1차 회차: 2026/09/14 ~ 2026/10/19 ARMGC (TC4211 ~ TC4272) 호기별 TLC (트위스트락횟수)
 DEFAULT_TLC_COUNTS_20260914_20261019 = {
     "211": 8169, "212": 7895, "213": 8562, "214": 8292, "215": 7547, "216": 8129,
     "221": 8053, "222": 7476, "223": 8061, "224": 7137, "225": 8229, "226": 8111,
@@ -142,6 +154,17 @@ DEFAULT_TLC_COUNTS_20260914_20261019 = {
     "251": 8745, "252": 8207, "253": 7767, "254": 8708, "255": 4829, "256": 6648,
     "261": 7517, "262": 7651, "263": 7821, "264": 7751, "265": 4527, "266": 6400,
     "271": 2690, "272": 3446
+}
+
+# 2차 회차: 2026/10/20 ~ 2026/10/30 ARMGC (TC4211 ~ TC4272) 호기별 TLC (트위스트락횟수)
+DEFAULT_TLC_COUNTS_20261020_20261030 = {
+    "211": 2248, "212": 2086, "213": 2230, "214": 2384, "215": 2016, "216": 2204,
+    "221": 2188, "222": 1989, "223": 2316, "224": 1908, "225": 2190, "226": 2254,
+    "231": 2165, "232": 2195, "233": 1965, "234": 2110, "235": 2061, "236": 2278,
+    "241": 2008, "242": 2341, "243": 2217, "244": 2300, "245": 1400, "246": 1754,
+    "251": 2480, "252": 2050, "253": 2082, "254": 2356, "255": 1392, "256": 1989,
+    "261": 2081, "262": 1551, "263": 1986, "264": 1872, "265": 1365, "266": 1831,
+    "271":  804, "272":  948
 }
 
 
@@ -650,10 +673,47 @@ class SpreaderCountApp(tk.Tk):
 
         self._setup_styles()
         self._build_ui()
+
+        # DB에 기본 1차 회차(2026-09-14~2026-10-19) 및 2차 회차(2026-10-20~2026-10-30) 시드 보장
+        self._ensure_default_periods_in_db()
+
+        # 최신 회차(2026-10-20 ~ 2026-10-30)를 기본 화면으로 로드
+        periods = self.db.list_periods()
+        if periods:
+            latest_data = self.db.load_period(periods[0]["id"])
+            if latest_data:
+                pinfo = latest_data["period"]
+                self.base_date_var.set(pinfo["base_date"])
+                self.period_start_var.set(pinfo["period_start"])
+                self.period_end_var.set(pinfo["period_end"])
+                self.period_memo_var.set(pinfo["memo"])
+                for sp_id, sinfo in latest_data["spreaders"].items():
+                    self.spreader_base[sp_id] = {
+                        "init_crane": sinfo["init_crane"],
+                        "base_count": sinfo["base_count"],
+                    }
+                for cr, cinfo in latest_data["cranes"].items():
+                    if cr in self.crane_data:
+                        self.crane_data[cr] = cinfo
+
+        self.query_start_var.set("2026-09-14")
+        self.query_end_var.set(self.period_end_var.get())
+        self.recalculate_all()
+        self.refresh_db_views()
+
+    def _ensure_default_periods_in_db(self):
+        existing = {(p["period_start"], p["period_end"]): p["id"] for p in self.db.list_periods()}
+
+        # 1) 1차 회차 (2026-09-14 ~ 2026-10-19) 계산 및 저장
+        self.base_date_var.set("2026-08-31")
+        self.period_start_var.set("2026-09-14")
+        self.period_end_var.set("2026-10-19")
+        self.period_memo_var.set("1차 정기 산정 (2026-09-14 ~ 2026-10-19, TLC 기준)")
+        self._load_default_or_excel_base()
+        self._init_crane_data()
         self.recalculate_all()
 
-        # DB가 비어 있으면 초기 회차(2026-09-14 ~ 2026-10-19) 자동 등록
-        if not self.db.list_periods():
+        if ("2026-09-14", "2026-10-19") not in existing:
             self.db.save_period_calculation(
                 self.base_date_var.get(),
                 self.period_start_var.get(),
@@ -663,7 +723,41 @@ class SpreaderCountApp(tk.Tk):
                 self.calc_crane_results,
                 self.calc_spreader_results,
             )
-        self.refresh_db_views()
+
+        # 2) 2차 회차 (2026-10-20 ~ 2026-10-30): 1차 회차의 최종 누적 Count를 기준값으로 이관하여 산정
+        if ("2026-10-20", "2026-10-30") not in existing:
+            for srow in self.calc_spreader_results:
+                sp_id = srow["spreader"]
+                self.spreader_base[sp_id] = {
+                    "init_crane": srow["curr_crane"],
+                    "base_count": srow["final_count"],
+                }
+            self.base_date_var.set("2026-10-19")
+            self.period_start_var.set("2026-10-20")
+            self.period_end_var.set("2026-10-30")
+            self.period_memo_var.set("2차 정기 산정 (2026-10-20 ~ 2026-10-30, TLC 기준)")
+
+            for crane in ARMGC_CRANES:
+                prev_sp = OCR_DASHBOARD_20261019.get(crane, "")
+                curr_sp = OCR_DASHBOARD_20261030.get(crane, "")
+                note = "대시보드 교체 감지 (교환일 미상 → 중간일 10/25 50:50 자동산정)" if prev_sp != curr_sp else ""
+                self.crane_data[crane] = {
+                    "prev_spreader": prev_sp,
+                    "curr_spreader": curr_sp,
+                    "work_count": DEFAULT_TLC_COUNTS_20261020_20261030.get(crane, 0),
+                    "manual_swap_date": "",
+                    "note": note,
+                }
+            self.recalculate_all()
+            self.db.save_period_calculation(
+                self.base_date_var.get(),
+                self.period_start_var.get(),
+                self.period_end_var.get(),
+                self.period_memo_var.get(),
+                self.crane_data,
+                self.calc_crane_results,
+                self.calc_spreader_results,
+            )
 
     def _setup_styles(self):
         style = ttk.Style(self)
@@ -1990,12 +2084,11 @@ if __name__ == "__main__":
         sys.stdout.reconfigure(encoding="utf-8")
         app = SpreaderCountApp()
         app.withdraw()
-        out_file = os.path.join(get_app_dir(), "ARMGC_Spreader_Count_20261019.xlsx")
+        out_file = os.path.join(get_app_dir(), f"ARMGC_Spreader_Count_{app.period_end_var.get().replace('-', '')}.xlsx")
         app._write_output_excel(out_file)
-        q_res = app.db.query_usage_by_date_range("2026-09-14", "2026-10-19")
-        print(f"DB Saved & Excel Exported: {out_file} | Query rows: {len(q_res)}")
-        for r in q_res[:10]:
-            print(f"  {r['spreader']} | 기간사용TLC: +{r['period_usage']:,} | 장착:{r['used_cranes']} | 누적:{r['latest_total']:,}")
+        print(f"DB Saved & Excel Exported: {out_file}")
+        for i, r in enumerate(app.calc_spreader_results, 1):
+            print(f"{i:2d} | {r['spreader']} | {r['init_crane']:5s} -> {r['curr_crane']:5s} | 기준:{r['base_count']:7,d} | +추가:{r['total_added']:5,d} | 최종:{r['final_count']:7,d} | {r['history']}")
         app.destroy()
     else:
         app = SpreaderCountApp()
