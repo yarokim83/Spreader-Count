@@ -127,6 +127,18 @@ OCR_DASHBOARD_20261030 = {
 }
 # 2026-10-30 예비/정비 현황: Y19(정비완료), Y11(910), Y34(910), Y41(793), Y28(793), Y31(SPARE)
 
+# 제미나이 OCR 판독 결과: 2026-11-09 대시보드 현황 (IMG_3117.HEIC)
+OCR_DASHBOARD_20261109 = {
+    "211": "Y01", "212": "Y18", "213": "Y26", "214": "Y27", "215": "Y13", "216": "Y25",
+    "221": "Y39", "222": "Y36", "223": "Y04", "224": "Y30", "225": "Y22", "226": "Y44",
+    "231": "Y32", "232": "Y20", "233": "Y03", "234": "Y08", "235": "Y41", "236": "Y35",
+    "241": "Y21", "242": "Y29", "243": "Y02", "244": "Y43", "245": "Y37", "246": "Y07",
+    "251": "Y14", "252": "Y33", "253": "Y16", "254": "Y17", "255": "Y23", "256": "Y42",
+    "261": "Y05", "262": "Y10", "263": "Y38", "264": "Y15", "265": "Y40", "266": "Y06",
+    "271": "Y12", "272": "Y09"
+}
+# 2026-11-09 예비/정비 현황: Y24(정비대기-일반샤시), Y19(정비완료), Y11(910), Y34(910), Y28(793), Y31(SPARE)
+
 # 사용자 확인 수동 교환 이력 기본 프리셋 (1차: 9/14~10/19)
 DEFAULT_MANUAL_OVERRIDES = [
     {
@@ -165,6 +177,17 @@ DEFAULT_TLC_COUNTS_20261020_20261030 = {
     "251": 2480, "252": 2050, "253": 2082, "254": 2356, "255": 1392, "256": 1989,
     "261": 2081, "262": 1551, "263": 1986, "264": 1872, "265": 1365, "266": 1831,
     "271":  804, "272":  948
+}
+
+# 3차 회차: 2026/10/31 ~ 2026/11/09 ARMGC (TC4211 ~ TC4272) 호기별 TLC (트위스트락횟수)
+DEFAULT_TLC_COUNTS_20261031_20261109 = {
+    "211": 2234, "212": 2018, "213": 2098, "214": 2390, "215": 2240, "216": 2005,
+    "221": 2227, "222": 2090, "223": 2314, "224": 1936, "225": 2321, "226": 2339,
+    "231": 2098, "232": 1985, "233": 2079, "234": 2033, "235": 2019, "236": 1997,
+    "241": 2178, "242": 2331, "243": 2156, "244": 2080, "245": 1064, "246": 1496,
+    "251": 2219, "252": 2063, "253": 2212, "254": 2349, "255": 1246, "256": 1755,
+    "261": 2278, "262": 1501, "263": 1861, "264": 2072, "265":  959, "266": 1472,
+    "271":  631, "272":  799
 }
 
 
@@ -279,17 +302,23 @@ def parse_work_count_text(raw_text: str, use_tlc: bool = True) -> dict:
         if crane_no not in ARMGC_CRANES:
             continue
 
+        # 각 토큰(Work Time, MMBF, MTTR, TLC, [Work Count])을 순서대로 확인
+        raw_cols = tokens[1:]
+        if use_tlc and len(raw_cols) >= 4:
+            # 4번째 데이터 열(index 3)이 TLC (Work Count 열 유무와 무관하게 정확히 추출)
+            cand = raw_cols[3].replace(",", "")
+            if re.match(r"^\d+(\.\d+)?$", cand):
+                result[crane_no] = int(round(float(cand)))
+                continue
+
         num_tokens = []
-        for tok in tokens[1:]:
+        for tok in raw_cols:
             cleaned = tok.replace(",", "")
             if re.match(r"^\d+(\.\d+)?$", cleaned):
                 num_tokens.append(cleaned)
 
         if num_tokens:
-            if len(num_tokens) >= 4 and use_tlc:
-                val = int(round(float(num_tokens[-2])))
-            else:
-                val = int(round(float(num_tokens[-1])))
+            val = int(round(float(num_tokens[-1])))
             result[crane_no] = val
     return result
 
@@ -725,26 +754,61 @@ class SpreaderCountApp(tk.Tk):
             )
 
         # 2) 2차 회차 (2026-10-20 ~ 2026-10-30): 1차 회차의 최종 누적 Count를 기준값으로 이관하여 산정
+        for srow in self.calc_spreader_results:
+            sp_id = srow["spreader"]
+            self.spreader_base[sp_id] = {
+                "init_crane": srow["curr_crane"],
+                "base_count": srow["final_count"],
+            }
+        self.base_date_var.set("2026-10-19")
+        self.period_start_var.set("2026-10-20")
+        self.period_end_var.set("2026-10-30")
+        self.period_memo_var.set("2차 정기 산정 (2026-10-20 ~ 2026-10-30, TLC 기준)")
+
+        for crane in ARMGC_CRANES:
+            prev_sp = OCR_DASHBOARD_20261019.get(crane, "")
+            curr_sp = OCR_DASHBOARD_20261030.get(crane, "")
+            note = "대시보드 교체 감지 (교환일 미상 → 중간일 10/25 50:50 자동산정)" if prev_sp != curr_sp else ""
+            self.crane_data[crane] = {
+                "prev_spreader": prev_sp,
+                "curr_spreader": curr_sp,
+                "work_count": DEFAULT_TLC_COUNTS_20261020_20261030.get(crane, 0),
+                "manual_swap_date": "",
+                "note": note,
+            }
+        self.recalculate_all()
         if ("2026-10-20", "2026-10-30") not in existing:
+            self.db.save_period_calculation(
+                self.base_date_var.get(),
+                self.period_start_var.get(),
+                self.period_end_var.get(),
+                self.period_memo_var.get(),
+                self.crane_data,
+                self.calc_crane_results,
+                self.calc_spreader_results,
+            )
+
+        # 3) 3차 회차 (2026-10-31 ~ 2026-11-09): 2차 회차의 최종 누적 Count를 기준값으로 이관하여 산정
+        if ("2026-10-31", "2026-11-09") not in existing:
             for srow in self.calc_spreader_results:
                 sp_id = srow["spreader"]
                 self.spreader_base[sp_id] = {
                     "init_crane": srow["curr_crane"],
                     "base_count": srow["final_count"],
                 }
-            self.base_date_var.set("2026-10-19")
-            self.period_start_var.set("2026-10-20")
-            self.period_end_var.set("2026-10-30")
-            self.period_memo_var.set("2차 정기 산정 (2026-10-20 ~ 2026-10-30, TLC 기준)")
+            self.base_date_var.set("2026-10-30")
+            self.period_start_var.set("2026-10-31")
+            self.period_end_var.set("2026-11-09")
+            self.period_memo_var.set("3차 정기 산정 (2026-10-31 ~ 2026-11-09, TLC 기준)")
 
             for crane in ARMGC_CRANES:
-                prev_sp = OCR_DASHBOARD_20261019.get(crane, "")
-                curr_sp = OCR_DASHBOARD_20261030.get(crane, "")
-                note = "대시보드 교체 감지 (교환일 미상 → 중간일 10/25 50:50 자동산정)" if prev_sp != curr_sp else ""
+                prev_sp = OCR_DASHBOARD_20261030.get(crane, "")
+                curr_sp = OCR_DASHBOARD_20261109.get(crane, "")
+                note = "대시보드 교체 감지 (교환일 미상 → 중간일 11/04 50:50 자동산정)" if prev_sp != curr_sp else ""
                 self.crane_data[crane] = {
                     "prev_spreader": prev_sp,
                     "curr_spreader": curr_sp,
-                    "work_count": DEFAULT_TLC_COUNTS_20261020_20261030.get(crane, 0),
+                    "work_count": DEFAULT_TLC_COUNTS_20261031_20261109.get(crane, 0),
                     "manual_swap_date": "",
                     "note": note,
                 }
